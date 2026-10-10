@@ -1,0 +1,18 @@
+{
+  "brand": "CareNow",
+  "tagline": "Care You Can Trust, Wherever You Are.",
+  "actions": {
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "retry": "Try again",
+    "viewAll": "View all",
+    "save": "Save changes",
+    "cancel": "Cancel"
+  },
+  "states": {
+    "loading": "Loading your CareNow workspace…",
+    "offlineTitle": "CareNow services are unavailable",
+    "offlineBody": "We could not reach the CareNow API. Check your connection and try again.",
+    "empty": "There is nothing to show here yet."
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "title": "Notifications",
+  "markRead": "Mark as read",
+  "markAllRead": "Mark all as read",
+  "empty": "You are all caught up.",
+  "unavailable": "Notifications could not be loaded. Try again when your connection is restored."
+}

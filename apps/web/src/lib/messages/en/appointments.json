@@ -1,0 +1,9 @@
+{
+  "scheduled": "Scheduled",
+  "cancelled": "Cancelled",
+  "completed": "Completed",
+  "noShow": "No show",
+  "online": "Online",
+  "inPerson": "In person",
+  "timeZone": "Asia/Yangon"
+}
