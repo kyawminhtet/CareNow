@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, CalendarDays, ClipboardList, HeartHandshake, LayoutDashboard, LogOut, MessageSquare, Search, Settings, Shield, Stethoscope, Users, UserRound, Video, Clock3, ScrollText } from "lucide-react";
+import { Bell, CalendarDays, ClipboardList, HeartHandshake, LayoutDashboard, LogOut, MapPin, MessageSquare, Search, Settings, Shield, Stethoscope, Users, UserRound, Video, Clock3, ScrollText, Tags } from "lucide-react";
 import type { ApplicationRole, AuthorizedSession } from "@carenow/contracts";
 import { formatYangonDate } from "@/lib/date-format";
 import { signOutAction } from "@/app/sign-in/actions";
@@ -20,7 +20,9 @@ const doctorLinks: NavLink[] = [
 const adminLinks: NavLink[] = [
   { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
   { label: "Doctors", href: "/admin/doctors", icon: Stethoscope },
+  { label: "Specialties", href: "/admin/specialties", icon: Tags },
   { label: "Schedules", href: "/admin/schedules", icon: CalendarDays },
+  { label: "Clinics", href: "/admin/clinics", icon: MapPin },
   { label: "Patients", href: "/admin/patients", icon: Users },
   { label: "Appointments", href: "/admin/appointments", icon: ClipboardList },
   { label: "Consultations", href: "/admin/consultations", icon: Video },
@@ -49,7 +51,10 @@ export function PortalShell({ session, role, unreadCount = 0, children }: {
         <nav aria-label={`${isAdmin ? "Administrator" : "Doctor"} navigation`}>
           <div className="nav-label">Workspace</div>
           <div className="nav-list">
-            {links.map(({ label, href, icon: Icon }) => <Link key={href} className={`nav-item${pathname === href ? " active" : ""}`} href={href} aria-current={pathname === href ? "page" : undefined}><Icon size={16} strokeWidth={2} /><span>{label}</span></Link>)}
+            {links.map(({ label, href, icon: Icon }) => {
+              const active = pathname === href || pathname.startsWith(`${href}/`);
+              return <Link key={href} className={`nav-item${active ? " active" : ""}`} href={href} aria-current={active ? "page" : undefined}><Icon size={16} strokeWidth={2} /><span>{label}</span></Link>;
+            })}
           </div>
         </nav>
         <div className="sidebar-bottom">

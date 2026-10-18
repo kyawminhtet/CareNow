@@ -10,6 +10,7 @@ datasource db {
 enum ApplicationRole {
   DOCTOR
   ADMINISTRATOR
+  PATIENT
 
   @@map("application_role")
 }
@@ -40,6 +41,7 @@ model AppUser {
   updatedAt        DateTime         @default(now()) @map("updated_at") @db.Timestamptz(6)
   identityMappings IdentityMapping[]
   doctorProfile    DoctorProfile?
+  sentChatMessages ChatMessage[]
 
   @@map("app_users")
 }
@@ -61,6 +63,7 @@ model DoctorProfile {
   appUserId           String                    @id @map("app_user_id") @db.Uuid
   specialty           String
   biography           String                    @default("")
+  profilePhotoKey     String?                   @map("profile_photo_key")
   licenseNumber       String                    @map("license_number")
   licenseRegion       String                    @map("license_region")
   verificationStatus  DoctorVerificationStatus @default(PENDING) @map("verification_status")
@@ -77,6 +80,17 @@ model DoctorProfile {
   verificationDocuments DoctorVerificationDocument[]
 
   @@map("doctor_profiles")
+}
+
+model Specialty {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  photoKey  String?  @map("photo_key")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("specialties")
 }
 
 model DoctorService {
@@ -106,6 +120,35 @@ model DoctorVerificationDocument {
 
   @@index([doctorUserId, uploadedAt(sort: Desc)], map: "verification_documents_doctor_idx")
   @@map("doctor_verification_documents")
+}
+
+model ChatConversation {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  appointmentId  String        @unique(map: "chat_conversations_appointment_unique") @map("appointment_id") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
+  lastMessageAt  DateTime?     @map("last_message_at") @db.Timestamptz(6)
+  messages       ChatMessage[]
+
+  @@index([lastMessageAt(sort: Desc)], map: "chat_conversations_last_message_idx")
+  @@map("chat_conversations")
+}
+
+model ChatMessage {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId String          @map("conversation_id") @db.Uuid
+  senderUserId   String          @map("sender_user_id") @db.Uuid
+  content        String          @db.Text
+  clientMessageId String?        @map("client_message_id") @db.Uuid
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  readAt         DateTime?       @map("read_at") @db.Timestamptz(6)
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender          AppUser         @relation(fields: [senderUserId], references: [id], onDelete: Restrict)
+
+  @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)], map: "chat_messages_conversation_created_idx")
+  @@index([conversationId, readAt], map: "chat_messages_unread_idx")
+  @@index([senderUserId, createdAt(sort: Desc)], map: "chat_messages_sender_created_idx")
+  @@map("chat_messages")
 }
 
 enum ConsultationType {

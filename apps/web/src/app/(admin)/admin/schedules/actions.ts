@@ -6,6 +6,9 @@ import { getApiOrigin } from "@/lib/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type ScheduleActionState = { success?: string; error?: string };
+export type WeeklyScheduleInput = { doctorId: string; startDate: string; endDate: string; weekdays: number[]; startTime: string; endTime: string; slotMinutes: number };
+export type WeeklyPreviewItem = { startsAt: string; endsAt: string; conflict: boolean };
+export type WeeklyPreviewState = { input?: WeeklyScheduleInput; items?: WeeklyPreviewItem[]; total?: number; consultationType?: "ONLINE" | "IN_PERSON"; clinicName?: string | null; error?: string };
 
 export async function createSlotAction(_previous: ScheduleActionState, formData: FormData): Promise<ScheduleActionState> {
   const values = readValues(formData);
@@ -23,6 +26,72 @@ export async function updateSlotAction(slotId: string, _previous: ScheduleAction
 
 export async function deleteSlotAction(slotId: string, _previous: ScheduleActionState, _formData: FormData): Promise<ScheduleActionState> {
   return sendRequest("DELETE", `/v1/web/admin/schedules/${encodeURIComponent(slotId)}`, undefined, "Timeslot deleted.");
+}
+
+export async function previewWeeklyScheduleAction(_previous: WeeklyPreviewState, formData: FormData): Promise<WeeklyPreviewState> {
+  const input = readWeeklyInput(formData);
+  if ("error" in input) return input;
+  await requireRole("ADMINISTRATOR");
+  const response = await sendWeeklyRequest("/v1/web/admin/schedules/weekly/preview", input);
+  if ("error" in response) return response;
+  return { input, ...response };
+}
+
+export async function createWeeklySlotsAction(_previous: ScheduleActionState, formData: FormData): Promise<ScheduleActionState> {
+  const serialized = field(formData, "weeklyInput");
+  let input: unknown;
+  try { input = JSON.parse(serialized); } catch { return { error: "Preview the weekly schedule again before creating slots." }; }
+  await requireRole("ADMINISTRATOR");
+  const result = await sendWeeklyRequest("/v1/web/admin/schedules/weekly", input);
+  if ("error" in result) return result;
+  revalidatePath("/admin/schedules");
+  revalidatePath("/admin/dashboard");
+  return { success: `Created ${result.total} timeslots.` };
+}
+
+function readWeeklyInput(formData: FormData): WeeklyScheduleInput | { error: string } {
+  const doctorId = field(formData, "doctorId");
+  const startDate = field(formData, "startDate");
+  const endDate = field(formData, "endDate");
+  const startTime = field(formData, "startTime");
+  const endTime = field(formData, "endTime");
+  const weekdays = formData.getAll("weekdays").map(Number);
+  const slotMinutes = Number(field(formData, "slotMinutes"));
+  if (!doctorId || !startDate || !endDate || weekdays.length === 0 || !startTime || !endTime) return { error: "Choose a doctor, date range, working days and hours." };
+  if (![15, 30, 45, 60].includes(slotMinutes)) return { error: "Choose a valid appointment duration." };
+  return { doctorId, startDate, endDate, weekdays, startTime, endTime, slotMinutes };
+}
+
+async function sendWeeklyRequest(path: string, body: unknown): Promise<WeeklyPreviewState | { total: number } | { error: string }> {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return { error: "CareNow authentication is unavailable." };
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { error: "Your administrator session expired. Sign in again." };
+  try {
+    const response = await fetch(`${getApiOrigin()}${path}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${session.access_token}`, accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (response.ok) {
+      const result = await response.json() as Record<string, unknown>;
+      if (path.endsWith("/preview") && Array.isArray(result.items) && typeof result.total === "number" &&
+          (result.consultationType === "ONLINE" || result.consultationType === "IN_PERSON")) {
+        return { items: result.items as WeeklyPreviewItem[], total: result.total, consultationType: result.consultationType,
+          clinicName: typeof result.clinicName === "string" ? result.clinicName : null };
+      }
+      if (!path.endsWith("/preview") && typeof result.total === "number") return { total: result.total };
+      return { error: "The CareNow API returned an invalid schedule preview." };
+    }
+    if (response.status === 401 || response.status === 403) return { error: "Only an active administrator can manage timeslots." };
+    if (response.status === 404) return { error: "The selected active doctor could not be found." };
+    if (response.status === 409) return { error: "One or more timeslots now overlap existing slots. Preview the schedule again." };
+    if (response.status === 400) return { error: "Review the date range, working hours, duration, and the doctor's active clinic assignment." };
+    return { error: "Weekly timeslot generation is unavailable. Try again shortly." };
+  } catch {
+    return { error: "Weekly timeslot generation is unavailable until the CareNow API is connected." };
+  }
 }
 
 function readValues(formData: FormData) {

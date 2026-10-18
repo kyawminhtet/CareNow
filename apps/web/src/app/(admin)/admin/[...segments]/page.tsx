@@ -8,7 +8,7 @@ const sections: Record<string, { title: string; description: string; createLabel
   schedules: { title: "Schedules", description: "Manage doctor availability and slot conflicts." },
   patients: { title: "Patients", description: "Operational patient references and account status." },
   appointments: { title: "Appointments", description: "Filter appointment operations by date, type, doctor and status." },
-  consultations: { title: "Consultations", description: "Monitor consultation progress and connection status." },
+  consultations: { title: "Consultations", description: "Review consultation schedules and operational details." },
   reports: { title: "Reports", description: "Aggregate platform activity and operational reports." },
   "audit-logs": { title: "Audit logs", description: "Review access and operational changes." },
   settings: { title: "Settings", description: "Manage platform settings and account controls." },

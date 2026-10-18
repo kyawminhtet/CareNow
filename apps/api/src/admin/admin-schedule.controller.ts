@@ -21,6 +21,21 @@ export class AdminScheduleController {
     return this.schedules.getSchedule({ doctorId, from, until });
   }
 
+  @Post("weekly/preview")
+  @ApiOperation({ summary: "Preview generated weekly appointment slots and conflicts" })
+  async previewWeekly(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
+    await this.requireAdministrator(authorization);
+    return this.schedules.previewWeekly(body);
+  }
+
+  @Post("weekly")
+  @ApiOperation({ summary: "Create a weekly batch of appointment slots atomically" })
+  @ApiResponse({ status: 201, description: "Weekly appointment slots created." })
+  async createWeekly(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
+    const actor = await this.requireAdministrator(authorization);
+    return this.schedules.createWeekly(actor.user.id, body);
+  }
+
   @Get(":slotId")
   @ApiOperation({ summary: "Read one appointment slot" })
   async get(@Headers("authorization") authorization: string | undefined, @Param("slotId", ParseUUIDPipe) slotId: string) {

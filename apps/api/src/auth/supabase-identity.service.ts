@@ -22,9 +22,9 @@ export class SupabaseIdentityService {
     });
   }
 
-  async verifyAccessToken(accessToken: string): Promise<Pick<User, "id"> | null> {
+  async verifyAccessToken(accessToken: string): Promise<Pick<User, "id" | "email" | "email_confirmed_at" | "user_metadata"> | null> {
     const { data, error } = await this.client.auth.getUser(accessToken);
     if (error || !data.user?.id) return null;
-    return { id: data.user.id };
+    return { id: data.user.id, email: data.user.email, email_confirmed_at: data.user.email_confirmed_at, user_metadata: data.user.user_metadata };
   }
 }

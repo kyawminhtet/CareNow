@@ -5,6 +5,7 @@ import { PrismaService } from "../prisma/prisma.service";
 type ConsultationTypeValue = "ONLINE" | "IN_PERSON";
 type SlotStatusValue = "OPEN" | "BLOCKED";
 type SlotInput = { doctorId: string; consultationType: ConsultationTypeValue; clinicId: string | null; startsAt: Date; endsAt: Date; status: SlotStatusValue };
+type WeeklyScheduleInput = { doctorId: string; startDate: string; endDate: string; weekdays: number[]; startTime: string; endTime: string; slotMinutes: number };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 @Injectable()
@@ -24,13 +25,13 @@ export class AdminScheduleService {
       services: doctor.services.map((service) => service.consultationType),
     }));
 
-    const clinics = await this.prisma.$queryRaw<Array<{ doctorId: string; clinicId: string; name: string }>>`
-      SELECT dc.doctor_user_id::text AS "doctorId", c.id::text AS "clinicId", c.name
+    const clinics = await this.prisma.$queryRaw<Array<{ doctorId: string; clinicId: string; name: string; isPrimary: boolean }>>`
+      SELECT dc.doctor_user_id::text AS "doctorId", c.id::text AS "clinicId", c.name, dc.is_primary AS "isPrimary"
         FROM public.doctor_clinics dc
         JOIN public.clinics c ON c.id = dc.clinic_id AND c.is_active = true
         JOIN public.doctor_profiles dp ON dp.app_user_id = dc.doctor_user_id AND dp.verification_status = 'VERIFIED'
         JOIN public.app_users au ON au.id = dp.app_user_id AND au.status = 'ACTIVE'
-       ORDER BY c.name
+       ORDER BY dc.is_primary DESC, c.name
     `;
     const filtersParsed = this.readFilters(filters);
     const slotRows = await this.prisma.$queryRaw<Array<{
@@ -91,6 +92,135 @@ export class AdminScheduleService {
       return created;
     });
     return { created: true, ...(await this.getSlot(rows[0].id)).item };
+  }
+
+  async previewWeekly(body: unknown) {
+    const input = this.readWeeklyInput(body);
+    const defaults = await this.getWeeklyDefaults(input.doctorId);
+    const slots = this.generateWeeklySlots(input, defaults.consultationType, defaults.clinicId);
+    const overlaps = await this.findOverlaps(input.doctorId, slots);
+    return {
+      total: slots.length,
+      consultationType: defaults.consultationType,
+      clinicName: defaults.clinicName,
+      timeZone: "Asia/Yangon",
+      items: slots.map((slot) => ({ ...slot, conflict: overlaps.some((overlap) => slot.startsAt < overlap.endsAt && slot.endsAt > overlap.startsAt) })),
+    };
+  }
+
+  async createWeekly(actorUserId: string, body: unknown) {
+    const input = this.readWeeklyInput(body);
+    const defaults = await this.getWeeklyDefaults(input.doctorId);
+    const slots = this.generateWeeklySlots(input, defaults.consultationType, defaults.clinicId);
+    const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockDoctorRow(tx, input.doctorId);
+      await this.assertDoctorCanOffer({ doctorId: input.doctorId, consultationType: defaults.consultationType, clinicId: defaults.clinicId, startsAt: slots[0].startsAt, endsAt: slots[0].endsAt, status: "OPEN" }, tx);
+      const overlaps = await this.findOverlaps(input.doctorId, slots, tx);
+      if (overlaps.length) throw new ConflictException({ code: "WEEKLY_TIMESLOT_CONFLICT", conflicts: overlaps.map((item) => item.startsAt.toISOString()) });
+      const values = slots.map((slot) => Prisma.sql`(
+        ${input.doctorId}::uuid,
+        ${defaults.consultationType}::public.consultation_type,
+        ${defaults.clinicId}::uuid,
+        ${slot.startsAt}, ${slot.endsAt}, 'OPEN'::public.slot_status
+      )`);
+      const created = await tx.$queryRaw<Array<{ id: string; startsAt: Date; endsAt: Date }>>(Prisma.sql`
+        INSERT INTO public.appointment_slots (doctor_user_id, consultation_type, clinic_id, starts_at, ends_at, status)
+        VALUES ${Prisma.join(values)}
+        RETURNING id::text, starts_at AS "startsAt", ends_at AS "endsAt"
+      `);
+      await tx.$executeRaw`
+        INSERT INTO public.audit_events (actor_user_id, action, target_type, target_id, metadata)
+        VALUES (${actorUserId}::uuid, 'APPOINTMENT_SLOTS_WEEKLY_CREATED', 'DOCTOR', ${input.doctorId}::uuid,
+          ${JSON.stringify({ count: created.length, consultationType: defaults.consultationType, clinicId: defaults.clinicId, startDate: input.startDate, endDate: input.endDate, weekdays: input.weekdays, startTime: input.startTime, endTime: input.endTime, slotMinutes: input.slotMinutes })}::jsonb)
+      `;
+      return created;
+    });
+    return { created: true, total: result.length, items: result.map((slot) => ({ id: slot.id, startsAt: slot.startsAt.toISOString(), endsAt: slot.endsAt.toISOString() })) };
+  }
+
+  private readWeeklyInput(value: unknown): WeeklyScheduleInput {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new BadRequestException({ code: "INVALID_REQUEST_BODY" });
+    const body = value as Record<string, unknown>;
+    if (typeof body.doctorId !== "string" || !UUID.test(body.doctorId)) throw new BadRequestException({ code: "INVALID_DOCTOR_ID" });
+    const startDate = this.readLocalDate(body.startDate);
+    const endDate = this.readLocalDate(body.endDate);
+    if (!startDate || !endDate || endDate < startDate) throw new BadRequestException({ code: "INVALID_WEEKLY_DATE_RANGE" });
+    const totalDays = Math.round((this.dateNumber(endDate) - this.dateNumber(startDate)) / 86400000) + 1;
+    if (totalDays > 90) throw new BadRequestException({ code: "WEEKLY_DATE_RANGE_TOO_LONG" });
+    const weekdays = Array.isArray(body.weekdays) ? body.weekdays : [];
+    if (weekdays.length === 0 || weekdays.length > 7 || weekdays.some((day) => !Number.isInteger(day) || day < 0 || day > 6) || new Set(weekdays).size !== weekdays.length) {
+      throw new BadRequestException({ code: "INVALID_WEEKLY_DAYS" });
+    }
+    if (typeof body.startTime !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(body.startTime) ||
+        typeof body.endTime !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(body.endTime) || body.endTime <= body.startTime) {
+      throw new BadRequestException({ code: "INVALID_WEEKLY_HOURS" });
+    }
+    if (![15, 30, 45, 60].includes(Number(body.slotMinutes))) throw new BadRequestException({ code: "INVALID_SLOT_DURATION" });
+    return { doctorId: body.doctorId, startDate, endDate, weekdays: weekdays as number[], startTime: body.startTime, endTime: body.endTime, slotMinutes: Number(body.slotMinutes) };
+  }
+
+  private readLocalDate(value: unknown): string | null {
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value ? value : null;
+  }
+
+  private dateNumber(value: string) { return new Date(`${value}T00:00:00.000Z`).getTime(); }
+
+  private generateWeeklySlots(input: WeeklyScheduleInput, consultationType: ConsultationTypeValue, clinicId: string | null) {
+    const slots: Array<{ startsAt: Date; endsAt: Date }> = [];
+    const cursor = new Date(`${input.startDate}T00:00:00.000Z`);
+    const end = this.dateNumber(input.endDate);
+    const [startHour, startMinute] = input.startTime.split(":").map(Number);
+    const [endHour, endMinute] = input.endTime.split(":").map(Number);
+    const startMinuteOfDay = startHour * 60 + startMinute;
+    const endMinuteOfDay = endHour * 60 + endMinute;
+    while (cursor.getTime() <= end) {
+      if (input.weekdays.includes(cursor.getUTCDay())) {
+        for (let minute = startMinuteOfDay; minute + input.slotMinutes <= endMinuteOfDay; minute += input.slotMinutes) {
+          const date = cursor.toISOString().slice(0, 10);
+          const hour = String(Math.floor(minute / 60)).padStart(2, "0");
+          const mins = String(minute % 60).padStart(2, "0");
+          const startsAt = new Date(`${date}T${hour}:${mins}:00+06:30`);
+          const endsAt = new Date(startsAt.getTime() + input.slotMinutes * 60000);
+          if (startsAt <= new Date()) throw new BadRequestException({ code: "WEEKLY_SLOT_NOT_IN_FUTURE", startsAt: startsAt.toISOString() });
+          slots.push({ startsAt, endsAt });
+          if (slots.length > 500) throw new BadRequestException({ code: "WEEKLY_SLOT_LIMIT_EXCEEDED", max: 500 });
+        }
+      }
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+    if (slots.length === 0) throw new BadRequestException({ code: "WEEKLY_SCHEDULE_HAS_NO_SLOTS" });
+    if (consultationType === "IN_PERSON" && !clinicId) throw new BadRequestException({ code: "DOCTOR_HAS_NO_ACTIVE_PRIMARY_CLINIC" });
+    return slots;
+  }
+
+  private async getWeeklyDefaults(doctorId: string) {
+    const services = await this.prisma.doctorService.findMany({
+      where: { doctorUserId: doctorId, isActive: true, doctor: { verificationStatus: "VERIFIED", appUser: { status: "ACTIVE" } } },
+      select: { consultationType: true },
+    });
+    if (services.length === 0) throw new NotFoundException({ code: "ACTIVE_VERIFIED_DOCTOR_NOT_FOUND" });
+    const clinics = await this.prisma.$queryRaw<Array<{ clinicId: string; name: string }>>`
+      SELECT c.id::text AS "clinicId", c.name FROM public.doctor_clinics dc
+        JOIN public.clinics c ON c.id = dc.clinic_id AND c.is_active = true
+       WHERE dc.doctor_user_id = ${doctorId}::uuid ORDER BY dc.is_primary DESC, c.name LIMIT 1
+    `;
+    const hasInPerson = services.some((service) => service.consultationType === "IN_PERSON");
+    const hasOnline = services.some((service) => service.consultationType === "ONLINE");
+    if (hasInPerson && clinics[0]) return { consultationType: "IN_PERSON" as const, clinicId: clinics[0].clinicId, clinicName: clinics[0].name };
+    if (hasOnline) return { consultationType: "ONLINE" as const, clinicId: null, clinicName: null };
+    throw new BadRequestException({ code: "DOCTOR_HAS_NO_ACTIVE_PRIMARY_CLINIC" });
+  }
+
+  private async findOverlaps(doctorId: string, slots: Array<{ startsAt: Date; endsAt: Date }>, client: PrismaService | Prisma.TransactionClient = this.prisma) {
+    const first = slots[0].startsAt;
+    const last = slots[slots.length - 1].endsAt;
+    const existing = await client.$queryRaw<Array<{ startsAt: Date; endsAt: Date }>>`
+      SELECT starts_at AS "startsAt", ends_at AS "endsAt" FROM public.appointment_slots
+       WHERE doctor_user_id = ${doctorId}::uuid AND starts_at < ${last} AND ends_at > ${first}
+    `;
+    return existing.filter((candidate) => slots.some((slot) => slot.startsAt < candidate.endsAt && slot.endsAt > candidate.startsAt));
   }
 
   async updateSlot(actorUserId: string, slotId: string, body: unknown) {
@@ -174,15 +304,15 @@ export class AdminScheduleService {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
-  private async assertDoctorCanOffer(input: SlotInput) {
-    const service = await this.prisma.doctorService.findFirst({
+  private async assertDoctorCanOffer(input: SlotInput, client: PrismaService | Prisma.TransactionClient = this.prisma) {
+    const service = await client.doctorService.findFirst({
       where: { doctorUserId: input.doctorId, consultationType: input.consultationType, isActive: true,
         doctor: { verificationStatus: "VERIFIED", appUser: { status: "ACTIVE" } } },
       select: { id: true },
     });
     if (!service) throw new BadRequestException({ code: "DOCTOR_SERVICE_NOT_AVAILABLE" });
     if (input.consultationType === "IN_PERSON") {
-      const assignment = await this.prisma.$queryRaw<Array<{ allowed: boolean }>>`
+      const assignment = await client.$queryRaw<Array<{ allowed: boolean }>>`
         SELECT EXISTS (SELECT 1 FROM public.doctor_clinics dc
           JOIN public.clinics c ON c.id = dc.clinic_id AND c.is_active = true
           WHERE dc.doctor_user_id = ${input.doctorId}::uuid AND dc.clinic_id = ${input.clinicId}::uuid) AS allowed

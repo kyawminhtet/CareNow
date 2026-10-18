@@ -19,6 +19,10 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const exceptionBody = exception instanceof HttpException ? exception.getResponse() : undefined;
     const code = typeof exceptionBody === "object" && exceptionBody !== null && "code" in exceptionBody
       ? String(exceptionBody.code)
+      : status === HttpStatus.NOT_FOUND
+        ? "API_ROUTE_NOT_FOUND"
+        : status === HttpStatus.BAD_REQUEST
+          ? "INVALID_REQUEST"
       : status >= 500
         ? "INTERNAL_ERROR"
         : "REQUEST_FAILED";

@@ -9,8 +9,9 @@ This repository treats Supabase Auth as the identity provider and PostgreSQL as 
 3. In Authentication → URL Configuration, set Site URL to http://localhost:3000 and add http://localhost:3000/** to Redirect URLs. For deployment, set the production Site URL and add only the exact production auth callback/recovery URLs; add preview patterns only if you use preview deployments.
 4. In Authentication → Providers → Email, keep email signup enabled for the doctor registration flow and enable email confirmation. Configure custom SMTP before inviting real users; the default email sender is for limited testing.
 5. For doctor registration, set `SUPABASE_SERVICE_ROLE_KEY` in `apps/api/.env` using the server-only secret key from the same project. Never put this key in a `NEXT_PUBLIC_*` variable or browser code. The API creates a private `doctor-verification` Storage bucket on first upload and stores verification files there.
-6. Apply the doctor-registration details migration after the foundation migration: `supabase/migrations/20261008100000_doctor_registration_details.sql`.
+6. Apply all migrations in timestamp order. This includes the doctor-registration details migration, `20261010120000_patient_mobile_foundation.sql`, `20261014110000_doctor_profile_photos.sql`, the specialty migrations, and `20261016100000_appointment_chat.sql`.
 7. Set `WEB_ORIGIN` in `apps/api/.env` to the shared doctor/admin portal origin. Add `${WEB_ORIGIN}/auth/callback?next=/reset-password` to Supabase Auth's allowed redirect URLs so administrator-created doctor invitations can set a password safely.
+8. For patient signup and recovery, add `carenow://auth/callback` to Supabase Auth's allowed redirect URLs. Patient signup also requires email confirmation.
 5. The web sign-in uses email and password only. In Authentication → Multi-Factor Authentication, disable TOTP enrollment and verification if you want the hosted project to match this app. The local settings in supabase/config.toml disable both. This does not delete factors users already enrolled.
 6. In Storage, create a private bucket named doctor-verification, with a conservative file-size limit and allowed document types (PDF, JPEG, PNG). Keep it private. Do not create broad storage.objects policies; uploads/downloads should go through the authorized API until ownership policies are implemented.
 7. Check Database → Extensions only if a later migration requests an extension. This foundation schema intentionally avoids adding one.
@@ -44,7 +45,7 @@ After the foundation migration is applied and the Auth user exists, open Supabas
 ## What the foundation provides
 
 - Internal CareNow UUID accounts with a separate identity_mappings table, so app IDs are not tied to Supabase Auth IDs.
-- Doctor profiles, clinics, services, availability rules, materialized time slots, appointments, notification preferences/inbox, an outbox, audit metadata, and verification-document object references.
+- Doctor profiles, clinics, services, availability rules, materialized time slots, patient profiles, appointments, notification preferences/inbox, registered push devices, an outbox, audit metadata, and verification-document object references.
 - RLS enabled and no browser data grants/policies on application tables. This is intentionally API-only until endpoint authorization is implemented.
 - An appointment slot uniqueness constraint so one time slot cannot be booked twice. The API must change slot state and insert/cancel the appointment in one database transaction.
 
@@ -54,6 +55,20 @@ After the foundation migration is applied and the Auth user exists, open Supabas
 - Use a least-privilege backend database role and add/verify policies for each endpoint. Do not give the browser a service-role key; it bypasses RLS.
 - Add private Storage authorization for upload, review, and signed download paths. Check file type and size server-side and use quarantine/review states.
 - Set up SMTP, backups/restore checks, migration review, and separate development/production projects.
+
+Doctor profile photos use a separate `doctor-profile-photos` bucket. The API creates or configures it as public-read on the first doctor photo upload so patient apps can display headshots without expiring links. Only the API service-role key can upload or remove objects; the bucket must contain profile photos only because anyone with a photo URL can view it. JPEG, PNG, and WebP images up to 5 MB are accepted.
+
+## Specialty catalog
+
+Apply `supabase/migrations/20261015100000_specialties.sql` with `supabase db push` to create and seed the specialty catalog. Administrators manage it under **Specialties** in the web portal. Active specialties appear in public doctor registration and administrator doctor invitations; the API validates the selected specialty ID and saves its canonical catalog name to the doctor profile. Deactivate specialties that already have doctor profiles; delete is allowed only when no doctor uses the specialty.
+
+Apply `supabase/migrations/20261015120000_specialty_photos.sql` to enable specialty images. The API creates the public-read `specialty-photos` Storage bucket when an administrator first uploads an image. Uploads are limited to JPEG, PNG, and WebP images up to 5 MB; only the API service-role key can write or delete them. The patient app reads the image URL with the specialty name from `GET /v1/public/specialties`.
+
+## Appointment chat
+
+Apply `supabase/migrations/20261016100000_appointment_chat.sql` after the foundation and patient migrations. It creates one conversation per appointment, backfills existing appointments, and installs a trigger for new appointments. Then apply `supabase/migrations/20261016113000_chat_message_idempotency.sql`; this adds safe retry keys so a mobile or web send can retry after a lost response without duplicating the message. Chat tables remain API-only. A private Realtime policy allows only the mapped patient and assigned doctor to receive chat broadcasts. The API publishes those broadcasts using `SUPABASE_SERVICE_ROLE_KEY`; configure that server-only value in `apps/api/.env` and restart the API. Never put it in a mobile or web environment variable.
+
+Message sending opens 15 minutes before the appointment start, remains available through the scheduled end and seven days afterward, and then becomes read-only. Cancelled and no-show appointments are read-only. The patient app and doctor portal provide live chat, automatic reconnect catch-up, and retryable sends. The API endpoints are listed under **Appointment chat API** in `docs/web-api-contract.md`.
 
 This setup is development scaffolding, not a compliance or production-readiness claim.
 

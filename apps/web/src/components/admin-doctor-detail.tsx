@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
-import { ArrowLeft, FileCheck2, LockKeyhole, Save, ShieldCheck, UserRoundX } from "lucide-react";
+import { useActionState, useRef, useState } from "react";
+import { ArrowLeft, Camera, FileCheck2, LockKeyhole, Save, ShieldCheck, Trash2, UserRound, UserRoundX } from "lucide-react";
 import type { AdminDoctorProfile } from "@/lib/portal-data";
 import {
   deactivateDoctorAction,
+  removeAdminDoctorPhotoAction,
+  uploadAdminDoctorPhotoAction,
   updateDoctorAccountAction,
   updateDoctorProfileAction,
   updateDoctorVerificationAction,
@@ -17,6 +19,10 @@ export function AdminDoctorDetail({ doctor }: { doctor: AdminDoctorProfile }) {
   const [verificationState, verificationAction, verificationPending] = useActionState(updateDoctorVerificationAction.bind(null, doctor.id), {} as DoctorAdminActionState);
   const [accountState, accountAction, accountPending] = useActionState(updateDoctorAccountAction.bind(null, doctor.id), {} as DoctorAdminActionState);
   const [deactivateState, deactivateAction, deactivatePending] = useActionState(deactivateDoctorAction.bind(null, doctor.id), {} as DoctorAdminActionState);
+  const [photoState, photoAction, photoPending] = useActionState(uploadAdminDoctorPhotoAction.bind(null, doctor.id), {} as DoctorAdminActionState);
+  const [removePhotoState, removePhotoAction, removePhotoPending] = useActionState(removeAdminDoctorPhotoAction.bind(null, doctor.id), {} as DoctorAdminActionState);
+  const photoInput = useRef<HTMLInputElement>(null);
+  const [photoName, setPhotoName] = useState("");
 
   return <>
     <div className="page-heading"><div><Link href="/admin/doctors" className="back-link"><ArrowLeft size={14} />Back to doctors</Link><h1 style={{ marginTop: 12 }}>{doctor.displayName}</h1><p>{doctor.email ?? "Email unavailable"} · {doctor.specialty}</p></div><div className="doctor-state-badges"><span className="list-status">{doctor.accountStatus}</span><span className={`role-badge${doctor.verificationStatus === "VERIFIED" ? "" : " admin"}`}>{doctor.verificationStatus}</span></div></div>
@@ -24,11 +30,28 @@ export function AdminDoctorDetail({ doctor }: { doctor: AdminDoctorProfile }) {
     <section className="admin-doctor-layout">
       <article className="card admin-doctor-profile-card">
         <header className="card-header"><div><h2>Professional profile</h2><span className="secondary-text">Edit information and services on file.</span></div></header>
+        <div className="admin-doctor-photo-editor">
+          {doctor.profilePhotoUrl ? <img src={doctor.profilePhotoUrl} alt={`${doctor.displayName} profile`} /> : <div className="admin-doctor-photo-empty"><UserRound size={32} /></div>}
+          <div className="admin-doctor-photo-controls">
+            <strong>Profile photo</strong><span className="secondary-text">Shown to patients in the doctor profile and directory.</span>
+            <form action={photoAction}>
+              <input ref={photoInput} className="doctor-photo-input" name="photo" type="file" accept="image/jpeg,image/png,image/webp" required aria-label="Choose a doctor profile photo" onChange={(event) => setPhotoName(event.currentTarget.files?.[0]?.name ?? "")} />
+              <button className="button secondary small" type="button" onClick={() => photoInput.current?.click()}><Camera size={14} />Choose photo</button>
+              <button className="button small" type="submit" disabled={photoPending}>{photoPending ? "Uploading…" : "Upload"}</button>
+              {photoName && <span className="secondary-text">{photoName}</span>}
+            </form>
+            {doctor.profilePhotoUrl && <form action={removePhotoAction}><button type="submit" className="button danger small" disabled={removePhotoPending}><Trash2 size={13} />{removePhotoPending ? "Removing…" : "Remove photo"}</button></form>}
+            {photoState.error && <p className="auth-error" role="alert">{photoState.error}</p>}{photoState.success && <p className="doctor-action-success" role="status">{photoState.success}</p>}
+            {removePhotoState.error && <p className="auth-error" role="alert">{removePhotoState.error}</p>}{removePhotoState.success && <p className="doctor-action-success" role="status">{removePhotoState.success}</p>}
+            <span className="secondary-text">JPEG, PNG, or WebP · maximum 5 MB</span>
+          </div>
+        </div>
         <form action={profileAction} className="doctor-edit-form">
           <div className="field-grid">
             <Field name="fullName" label="Full name" defaultValue={doctor.displayName} required />
             <Field name="phone" label="Phone number" defaultValue={doctor.phone ?? ""} required />
             <Field name="specialty" label="Specialty" defaultValue={doctor.specialty} required />
+            <div className="form-field doctor-edit-biography"><label htmlFor="doctor-biography">Professional biography</label><textarea id="doctor-biography" name="biography" rows={4} maxLength={2000} defaultValue={doctor.biography} /></div>
             <Field name="licenseNumber" label="License number" defaultValue={doctor.licenseNumber} required />
             <Field name="licenseRegion" label="License region" defaultValue={doctor.licenseRegion} required />
             <Field name="licenseExpiry" label="License expiry" type="date" defaultValue={doctor.licenseExpiry} required />

@@ -4,6 +4,7 @@ import type { FastifyRequest } from "fastify";
 import { AuthService } from "../auth/auth.service";
 import { DoctorRegistrationService } from "./doctor-registration.service";
 import { AdminDoctorService } from "./admin-doctor.service";
+import { DoctorProfileService } from "../doctor/doctor-profile.service";
 
 @ApiTags("administrator doctors")
 @ApiBearerAuth()
@@ -13,6 +14,7 @@ export class AdminDoctorController {
     private readonly auth: AuthService,
     private readonly registrations: DoctorRegistrationService,
     private readonly doctors: AdminDoctorService,
+    private readonly profiles: DoctorProfileService,
   ) {}
 
   @Get()
@@ -38,6 +40,20 @@ export class AdminDoctorController {
   ) {
     const actor = await this.requireAdministrator(authorization);
     return this.doctors.update(doctorId, actor.user.id, body);
+  }
+
+  @Post(":doctorId/profile-photo")
+  async uploadProfilePhoto(@Headers("authorization") authorization: string | undefined, @Param("doctorId", ParseUUIDPipe) doctorId: string, @Req() request: FastifyRequest) {
+    const actor = await this.requireAdministrator(authorization);
+    await this.profiles.get(doctorId);
+    return this.profiles.upload(doctorId, request, actor.user.id);
+  }
+
+  @Delete(":doctorId/profile-photo")
+  async removeProfilePhoto(@Headers("authorization") authorization: string | undefined, @Param("doctorId", ParseUUIDPipe) doctorId: string) {
+    const actor = await this.requireAdministrator(authorization);
+    await this.profiles.get(doctorId);
+    return this.profiles.remove(doctorId, actor.user.id);
   }
 
   @Patch(":doctorId/verification")

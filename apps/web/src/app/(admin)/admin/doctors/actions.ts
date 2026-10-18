@@ -7,15 +7,50 @@ import { revalidatePath } from "next/cache";
 
 export type DoctorAdminActionState = { success?: string; error?: string };
 
+export async function uploadAdminDoctorPhotoAction(doctorId: string, _previous: DoctorAdminActionState, formData: FormData): Promise<DoctorAdminActionState> {
+  await requireRole("ADMINISTRATOR");
+  const file = formData.get("photo");
+  if (!(file instanceof File) || file.size === 0) return { error: "Choose a profile photo." };
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 5 * 1024 * 1024) return { error: "Use a JPEG, PNG, or WebP image up to 5 MB." };
+  const supabase = await createSupabaseServerClient();
+  const { data: { session } } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+  if (!session) return { error: "Your administrator session expired. Sign in again." };
+  const payload = new FormData(); payload.append("photo", file, file.name);
+  try {
+    const response = await fetch(`${getApiOrigin()}/v1/web/admin/doctors/${encodeURIComponent(doctorId)}/profile-photo`, {
+      method: "POST", headers: { authorization: `Bearer ${session.access_token}`, accept: "application/json" }, body: payload, cache: "no-store",
+    });
+    if (!response.ok) return { error: "We could not upload this doctor's photo. Try again shortly." };
+    revalidatePath(`/admin/doctors/${encodeURIComponent(doctorId)}`); revalidatePath("/admin/doctors");
+    return { success: "Doctor profile photo updated." };
+  } catch { return { error: "Doctor management is unavailable until the CareNow API is connected." }; }
+}
+
+export async function removeAdminDoctorPhotoAction(doctorId: string): Promise<DoctorAdminActionState> {
+  await requireRole("ADMINISTRATOR");
+  const supabase = await createSupabaseServerClient();
+  const { data: { session } } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+  if (!session) return { error: "Your administrator session expired. Sign in again." };
+  try {
+    const response = await fetch(`${getApiOrigin()}/v1/web/admin/doctors/${encodeURIComponent(doctorId)}/profile-photo`, {
+      method: "DELETE", headers: { authorization: `Bearer ${session.access_token}`, accept: "application/json" }, cache: "no-store",
+    });
+    if (!response.ok) return { error: "We could not remove this doctor's photo. Try again shortly." };
+    revalidatePath(`/admin/doctors/${encodeURIComponent(doctorId)}`); revalidatePath("/admin/doctors");
+    return { success: "Doctor profile photo removed." };
+  } catch { return { error: "Doctor management is unavailable until the CareNow API is connected." }; }
+}
+
 export async function updateDoctorProfileAction(doctorId: string, _previous: DoctorAdminActionState, formData: FormData): Promise<DoctorAdminActionState> {
   const values = {
     fullName: field(formData, "fullName"), specialty: field(formData, "specialty"), licenseNumber: field(formData, "licenseNumber"),
+    biography: field(formData, "biography"),
     licenseRegion: field(formData, "licenseRegion"), licenseExpiry: field(formData, "licenseExpiry"), phone: field(formData, "phone"),
     qualifications: field(formData, "qualifications"), experienceYears: Number(field(formData, "experienceYears")),
     languages: field(formData, "languages").split(",").map((value) => value.trim()).filter(Boolean),
     services: formData.getAll("services").filter((value): value is string => value === "ONLINE" || value === "IN_PERSON"),
   };
-  if (Object.values(values).some((value) => value === "") || !values.languages.length || !values.services.length) {
+  if ([values.fullName, values.specialty, values.licenseNumber, values.licenseRegion, values.licenseExpiry, values.phone, values.qualifications].some((value) => value === "") || !values.languages.length || !values.services.length) {
     return { error: "Complete every required profile field and select at least one service." };
   }
   return apiMutation(doctorId, "PATCH", values, "Profile updated.");

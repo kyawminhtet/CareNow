@@ -46,7 +46,9 @@ export function DoctorDashboard({ result }: { result: { data: DoctorDashboardDat
           <div className="schedule-time">{appointmentTime(appointment.startTime)}<span>{appointmentDate(appointment.date)}</span></div>
           <div className="patient"><div className="avatar" aria-hidden="true">{appointment.initials}</div><div><strong>{appointment.patientName}</strong><span>{appointment.reason}</span></div></div>
           <div className="type-cell"><strong>{appointment.consultationType === "ONLINE" ? "Online" : "In person"}</strong>{appointment.location ?? "Video consultation"}</div>
-          {appointment.consultationType === "ONLINE" ? <Link href={`/doctor/consultations/${encodeURIComponent(appointment.id)}`} className="button small">Open consultation</Link> : <Link href={`/doctor/appointments/${encodeURIComponent(appointment.id)}`} className="button secondary small">Appointment</Link>}
+          {appointment.consultationType === "ONLINE"
+            ? <Link href={`/doctor/consultations/${encodeURIComponent(appointment.id)}`} className="button small">Join video</Link>
+            : <Link href={`/doctor/patients/${encodeURIComponent(appointment.patientId)}`} className="button secondary small">View patient</Link>}
         </div>)}</div> : <div className="empty-state"><strong>No upcoming appointments</strong><p>New bookings will appear here.</p></div>}
       </article>
       <div className="side-stack">

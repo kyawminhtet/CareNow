@@ -61,6 +61,22 @@ export class AuthService {
     return session;
   }
 
+  async requireActiveDoctor(accessToken: string) {
+    const session = await this.resolveSession(accessToken);
+    if (session.user.role !== "DOCTOR" || session.user.accountStatus !== "ACTIVE") {
+      throw new ForbiddenException({ code: "ACTIVE_DOCTOR_REQUIRED" });
+    }
+    return session;
+  }
+
+  async requirePatient(accessToken: string) {
+    const session = await this.resolveSession(accessToken);
+    if (session.user.role !== "PATIENT" || session.user.accountStatus !== "ACTIVE") {
+      throw new ForbiddenException({ code: "ACTIVE_PATIENT_REQUIRED" });
+    }
+    return session;
+  }
+
   async activateInvitedDoctor(accessToken: string) {
     const identity = await this.supabaseIdentity.verifyAccessToken(accessToken);
     if (!identity) throw new UnauthorizedException({ code: "AUTH_TOKEN_INVALID" });

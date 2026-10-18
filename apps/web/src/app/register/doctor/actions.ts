@@ -10,7 +10,7 @@ function readField(formData: FormData, key: string): string {
 }
 
 export async function registerDoctorAction(_previous: RegistrationActionState, formData: FormData): Promise<RegistrationActionState> {
-  const requiredFields = ["fullName", "email", "phone", "password", "specialty", "licenseNumber", "licenseRegion", "licenseExpiry", "qualifications", "experienceYears", "languages"];
+  const requiredFields = ["fullName", "email", "phone", "password", "specialtyId", "licenseNumber", "licenseRegion", "licenseExpiry", "qualifications", "experienceYears", "languages"];
   if (requiredFields.some((key) => !readField(formData, key))) return { error: "Complete the required registration fields." };
   if (!readField(formData, "email").includes("@")) return { error: "Enter a valid email address." };
   if (readField(formData, "password").length < 8) return { error: "Choose a password with at least 8 characters." };

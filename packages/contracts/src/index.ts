@@ -1,4 +1,4 @@
-export const APPLICATION_ROLES = ["DOCTOR", "ADMINISTRATOR"] as const;
+export const APPLICATION_ROLES = ["DOCTOR", "ADMINISTRATOR", "PATIENT"] as const;
 export type ApplicationRole = (typeof APPLICATION_ROLES)[number];
 
 export const DOCTOR_VERIFICATION_STATUSES = ["PENDING", "VERIFIED", "REJECTED"] as const;

@@ -38,6 +38,7 @@ export class DoctorRegistrationService {
 
   async register(request: FastifyRequest) {
     const form = await this.readMultipart(request);
+    form.fields.specialty = await this.resolveSpecialty(form.fields.specialtyId);
     this.validate(form.fields, form.files);
     if (!this.storageClient) throw new ServiceUnavailableException({ code: "PRIVATE_STORAGE_NOT_CONFIGURED" });
 
@@ -121,6 +122,7 @@ export class DoctorRegistrationService {
 
   async inviteFromAdministrator(request: FastifyRequest, actorUserId: string) {
     const form = await this.readMultipart(request);
+    form.fields.specialty = await this.resolveSpecialty(form.fields.specialtyId);
     this.validate(form.fields, form.files, false);
     if (!this.storageClient) throw new ServiceUnavailableException({ code: "PRIVATE_STORAGE_NOT_CONFIGURED" });
     const email = form.fields.email.toLowerCase();
@@ -265,6 +267,13 @@ export class DoctorRegistrationService {
     }
     if (fields.termsAccepted !== "on") throw new UnprocessableEntityException({ code: "TERMS_NOT_ACCEPTED" });
     if (files.length !== 3 || new Set(files.map((file) => file.field)).size !== 3) throw new UnprocessableEntityException({ code: "VERIFICATION_DOCUMENTS_REQUIRED" });
+  }
+
+  private async resolveSpecialty(specialtyId: string | undefined) {
+    if (!specialtyId) throw new UnprocessableEntityException({ code: "SPECIALTY_REQUIRED" });
+    const specialty = await this.prisma.specialty.findFirst({ where: { id: specialtyId, isActive: true }, select: { name: true } });
+    if (!specialty) throw new UnprocessableEntityException({ code: "INVALID_OR_INACTIVE_SPECIALTY" });
+    return specialty.name;
   }
 
   private async ensureBucket() {

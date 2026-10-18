@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useActionState, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, CheckCircle2, FileCheck2, MailCheck, ShieldCheck, Stethoscope } from "lucide-react";
 import { inviteDoctorAction, type AdminDoctorRegistrationState } from "@/app/(admin)/admin/doctors/new/actions";
+import type { SpecialtyOption } from "@/lib/portal-data";
 
 const steps = ["Account", "Professional", "Services", "Availability", "Documents & review"];
 
-export function AdminDoctorRegistrationForm() {
+export function AdminDoctorRegistrationForm({ specialties }: { specialties: SpecialtyOption[] }) {
   const [step, setStep] = useState(0);
   const [availabilityEnabled, setAvailabilityEnabled] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
@@ -16,7 +17,7 @@ export function AdminDoctorRegistrationForm() {
   function continueStep() {
     const activeStep = formRef.current?.querySelector<HTMLElement>(".registration-fields:not([hidden])");
     if (!activeStep) return;
-    const invalid = Array.from(activeStep.querySelectorAll<HTMLInputElement>("input")).find((input) => !input.checkValidity());
+    const invalid = Array.from(activeStep.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input, select")).find((input) => !input.checkValidity());
     if (invalid) { invalid.reportValidity(); return; }
     if (step === 2 && !activeStep.querySelector<HTMLInputElement>('input[name="services"]:checked')) {
       const serviceInput = activeStep.querySelector<HTMLInputElement>('input[name="services"]');
@@ -62,7 +63,7 @@ export function AdminDoctorRegistrationForm() {
         </div>
         <div className="registration-fields" hidden={step !== 1}>
           <h2>Professional details</h2><p className="step-hint">These details and uploaded documents enter the verification queue.</p>
-          <div className="field-grid"><RegistrationField id="specialty" label="Specialty" placeholder="General Medicine" required={step === 1} /><RegistrationField id="licenseNumber" label="Medical license number" required={step === 1} /><RegistrationField id="licenseRegion" label="License issuing country or region" placeholder="Myanmar" required={step === 1} /><RegistrationField id="licenseExpiry" label="License expiry" type="date" required={step === 1} /><RegistrationField id="qualifications" label="Qualifications" placeholder="MBBS, MD" required={step === 1} /><RegistrationField id="experienceYears" label="Years of experience" type="number" min="0" required={step === 1} /><RegistrationField id="languages" label="Languages spoken" placeholder="English, Burmese" required={step === 1} /></div>
+          <div className="field-grid"><SpecialtyField specialties={specialties} required={step === 1} /><RegistrationField id="licenseNumber" label="Medical license number" required={step === 1} /><RegistrationField id="licenseRegion" label="License issuing country or region" placeholder="Myanmar" required={step === 1} /><RegistrationField id="licenseExpiry" label="License expiry" type="date" required={step === 1} /><RegistrationField id="qualifications" label="Qualifications" placeholder="MBBS, MD" required={step === 1} /><RegistrationField id="experienceYears" label="Years of experience" type="number" min="0" required={step === 1} /><RegistrationField id="languages" label="Languages spoken" placeholder="English, Burmese" required={step === 1} /></div>
         </div>
         <div className="registration-fields" hidden={step !== 2}>
           <h2>Consultation services</h2><p className="step-hint">Select the services this doctor expects to offer. Clinic and availability setup can be completed after account invitation.</p>
@@ -89,6 +90,10 @@ export function AdminDoctorRegistrationForm() {
 
 function RegistrationField({ id, label, type = "text", required = false, placeholder, min }: { id: string; label: string; type?: string; required?: boolean; placeholder?: string; min?: string }) {
   return <div className="form-field"><label htmlFor={id}>{label}{required && <span aria-hidden="true"> *</span>}</label><input id={id} name={id} type={type} required={required} placeholder={placeholder} min={min} /></div>;
+}
+
+function SpecialtyField({ specialties, required }: { specialties: SpecialtyOption[]; required: boolean }) {
+  return <div className="form-field"><label htmlFor="specialtyId">Specialty{required && <span aria-hidden="true"> *</span>}</label><select id="specialtyId" name="specialtyId" required={required} defaultValue=""><option value="" disabled>{specialties.length ? "Choose a specialty" : "No specialties available"}</option>{specialties.map((specialty) => <option key={specialty.id} value={specialty.id}>{specialty.name}</option>)}</select>{specialties.length === 0 && <small>Ask an administrator to add specialties before registering a doctor.</small>}</div>;
 }
 
 function UploadField({ id, label, required }: { id: string; label: string; required: boolean }) {

@@ -4,17 +4,18 @@ import Link from "next/link";
 import { useActionState, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, CheckCircle2, FileCheck2, HeartHandshake, ShieldCheck, Stethoscope } from "lucide-react";
 import { registerDoctorAction, type RegistrationActionState } from "./actions";
+import type { SpecialtyOption } from "@/lib/portal-data";
 
 const steps = ["Account", "Professional", "Services", "Documents & review"];
 
-export function DoctorRegistrationForm() {
+export function DoctorRegistrationForm({ specialties }: { specialties: SpecialtyOption[] }) {
   const [step, setStep] = useState(0);
   const formRef = useRef<HTMLFormElement>(null);
   const [state, action, pending] = useActionState(registerDoctorAction, {} as RegistrationActionState);
   function continueStep() {
     const activeStep = formRef.current?.querySelector<HTMLElement>(".registration-fields:not([hidden])");
     if (!activeStep) return;
-    const invalidControl = Array.from(activeStep.querySelectorAll<HTMLInputElement>("input")).find((input) => !input.checkValidity());
+    const invalidControl = Array.from(activeStep.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input, select")).find((input) => !input.checkValidity());
     if (invalidControl) { invalidControl.reportValidity(); return; }
     if (step === 2 && !activeStep.querySelector<HTMLInputElement>('input[name="services"]:checked')) {
       activeStep.querySelector<HTMLInputElement>('input[name="services"]')?.setCustomValidity("Select at least one service.");
@@ -39,7 +40,7 @@ export function DoctorRegistrationForm() {
         </div>
         <div className="registration-fields" hidden={step !== 1}>
           <h2>Professional details</h2><p className="step-hint">CareNow verifies your submitted information before enabling appointments.</p>
-          <div className="field-grid"><FormField id="specialty" label="Specialty" placeholder="General Medicine" required={step === 1} /><FormField id="licenseNumber" label="Medical license number" required={step === 1} /><FormField id="licenseRegion" label="License issuing country or region" placeholder="Myanmar" required={step === 1} /><FormField id="licenseExpiry" label="License expiry" type="date" required={step === 1} /><FormField id="qualifications" label="Qualifications" placeholder="MBBS, MD" required={step === 1} /><FormField id="experienceYears" label="Years of experience" type="number" min="0" required={step === 1} /><FormField id="languages" label="Languages spoken" placeholder="English, Burmese" required={step === 1} /></div>
+          <div className="field-grid"><SpecialtyField specialties={specialties} required={step === 1} /><FormField id="licenseNumber" label="Medical license number" required={step === 1} /><FormField id="licenseRegion" label="License issuing country or region" placeholder="Myanmar" required={step === 1} /><FormField id="licenseExpiry" label="License expiry" type="date" required={step === 1} /><FormField id="qualifications" label="Qualifications" placeholder="MBBS, MD" required={step === 1} /><FormField id="experienceYears" label="Years of experience" type="number" min="0" required={step === 1} /><FormField id="languages" label="Languages spoken" placeholder="English, Burmese" required={step === 1} /></div>
         </div>
         <div className="registration-fields" hidden={step !== 2}>
           <h2>Consultation services</h2><p className="step-hint">Select every service you offer. You can update services after verification.</p>
@@ -57,6 +58,10 @@ export function DoctorRegistrationForm() {
       <div className="auth-foot registration-foot">Already registered? <Link className="text-link" href="/sign-in">Sign in</Link></div>
     </section>
   </main>;
+}
+
+function SpecialtyField({ specialties, required }: { specialties: SpecialtyOption[]; required: boolean }) {
+  return <div className="form-field"><label htmlFor="specialtyId">Specialty{required && <span aria-hidden="true"> *</span>}</label><select id="specialtyId" name="specialtyId" required={required} defaultValue=""><option value="" disabled>Select a specialty</option>{specialties.map((specialty) => <option key={specialty.id} value={specialty.id}>{specialty.name}</option>)}</select>{specialties.length === 0 && <small>Specialties are currently unavailable. Please try again later.</small>}</div>;
 }
 
 function FormField({ id, label, type = "text", required = false, placeholder, autoComplete, min, minLength }: { id: string; label: string; type?: string; required?: boolean; placeholder?: string; autoComplete?: string; min?: string; minLength?: number }) {

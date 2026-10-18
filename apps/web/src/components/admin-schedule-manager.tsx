@@ -6,12 +6,14 @@ import { CalendarDays, Clock3, MapPin, Pencil, Plus, Trash2, Video } from "lucid
 import type { AdminScheduleData, AdminScheduleSlot, DataResult } from "@/lib/portal-data";
 import { createSlotAction, deleteSlotAction, updateSlotAction, type ScheduleActionState } from "@/app/(admin)/admin/schedules/actions";
 import { UnavailableState } from "@/components/unavailable-state";
+import { AdminWeeklyScheduleGenerator } from "@/components/admin-weekly-schedule-generator";
 
 const EMPTY: ScheduleActionState = {};
 
 export function AdminScheduleManager({ result }: { result: DataResult<AdminScheduleData> }) {
   const [doctorFilter, setDoctorFilter] = useState("all");
   const [showCreate, setShowCreate] = useState(false);
+  const [showWeekly, setShowWeekly] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   if (result.unavailable || !result.data) return <>
     <div className="page-heading"><div><h1>Doctor timeslots</h1><p>Create and manage appointment times on behalf of doctors.</p></div></div>
@@ -21,8 +23,9 @@ export function AdminScheduleManager({ result }: { result: DataResult<AdminSched
   const data = result.data;
   const visibleSlots = doctorFilter === "all" ? data.items : data.items.filter((slot) => slot.doctorId === doctorFilter);
   return <>
-    <div className="page-heading"><div><h1>Doctor timeslots</h1><p>Create, review, update, block or delete appointment times on behalf of active, verified doctors.</p></div><button className="button" type="button" onClick={() => { setShowCreate((value) => !value); setEditingId(null); }}><Plus size={15} />{showCreate ? "Close form" : "Create timeslot"}</button></div>
+    <div className="page-heading"><div><h1>Doctor timeslots</h1><p>Create, review, update, block or delete appointment times on behalf of active, verified doctors.</p></div><div className="slot-actions"><button className="button secondary" type="button" onClick={() => { setShowWeekly((value) => !value); setShowCreate(false); setEditingId(null); }}>{showWeekly ? "Close weekly generator" : "Generate weekly slots"}</button><button className="button" type="button" onClick={() => { setShowCreate((value) => !value); setShowWeekly(false); setEditingId(null); }}><Plus size={15} />{showCreate ? "Close form" : "Create timeslot"}</button></div></div>
     {showCreate && <CreateSlotForm data={data} />}
+    {showWeekly && <AdminWeeklyScheduleGenerator data={data} />}
     <section className="card admin-slots-card">
       <header className="card-header"><div><h2>Available and blocked timeslots</h2><span className="step-hint">Times are displayed in Yangon time (MMT). Booked timeslots are protected from edits and deletion.</span></div>
         <label className="slot-filter"><span>Doctor</span><select value={doctorFilter} onChange={(event) => setDoctorFilter(event.currentTarget.value)}><option value="all">All doctors</option>{data.doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.name}</option>)}</select></label>
@@ -46,44 +49,45 @@ export function AdminScheduleManager({ result }: { result: DataResult<AdminSched
 function CreateSlotForm({ data }: { data: AdminScheduleData }) {
   const [state, action, pending] = useActionState(createSlotAction, EMPTY);
   const [doctorId, setDoctorId] = useState(data.doctors[0]?.id ?? "");
-  const doctor = data.doctors.find((item) => item.id === doctorId);
-  const [consultationType, setConsultationType] = useState<"ONLINE" | "IN_PERSON">(doctor?.services.includes("ONLINE") ? "ONLINE" : "IN_PERSON");
   const clinics = data.clinics.filter((clinic) => clinic.doctorId === doctorId);
-  const availableTypes = doctor?.services ?? [];
+  const doctor = data.doctors.find((item) => item.id === doctorId);
+  const canCreateSlot = doctor?.services.includes("ONLINE") || clinics.length > 0;
   return <form action={action} className="card slot-form">
     <header className="card-header"><div><h2>Create timeslot</h2><span className="step-hint">The administrator action is audited and the slot is assigned to the selected doctor.</span></div></header>
-    <SlotFields data={data} doctorId={doctorId} setDoctorId={(id) => { setDoctorId(id); const next = data.doctors.find((item) => item.id === id); setConsultationType(next?.services.includes("ONLINE") ? "ONLINE" : "IN_PERSON"); }} consultationType={consultationType} setConsultationType={setConsultationType} clinics={clinics} availableTypes={availableTypes} />
+    <SlotFields key={doctorId} data={data} doctorId={doctorId} setDoctorId={setDoctorId} clinics={clinics} />
     {state.error && <p className="auth-error" role="alert">{state.error}</p>}{state.success && <p className="doctor-action-success" role="status">{state.success}</p>}
-    <div className="slot-form-footer"><button className="button" type="submit" disabled={pending || data.doctors.length === 0}>{pending ? "Creating…" : "Create timeslot"}</button></div>
+    <div className="slot-form-footer"><button className="button" type="submit" disabled={pending || !canCreateSlot}>{pending ? "Creating…" : "Create timeslot"}</button></div>
   </form>;
 }
 
 function EditSlotForm({ slot, data, onCancel }: { slot: AdminScheduleSlot; data: AdminScheduleData; onCancel: () => void }) {
   const [state, action, pending] = useActionState(updateSlotAction.bind(null, slot.id), EMPTY);
   const [doctorId, setDoctorId] = useState(slot.doctorId);
-  const doctor = data.doctors.find((item) => item.id === doctorId);
-  const [consultationType, setConsultationType] = useState<"ONLINE" | "IN_PERSON">(slot.consultationType);
   const clinics = data.clinics.filter((clinic) => clinic.doctorId === doctorId);
-  const availableTypes = doctor?.services ?? [];
   return <form action={action} className="slot-edit-form">
     <div className="slot-edit-heading"><strong>Edit timeslot</strong><button type="button" className="text-link" onClick={onCancel}>Cancel</button></div>
-    <SlotFields key={`${doctorId}-${consultationType}`} data={data} doctorId={doctorId} setDoctorId={(id) => { setDoctorId(id); const next = data.doctors.find((item) => item.id === id); setConsultationType(next?.services.includes("ONLINE") ? "ONLINE" : "IN_PERSON"); }} consultationType={consultationType} setConsultationType={setConsultationType} clinics={clinics} availableTypes={availableTypes} initialClinicId={slot.clinicId ?? ""} startsAt={slot.startsAt} endsAt={slot.endsAt} status={slot.status === "BLOCKED" ? "BLOCKED" : "OPEN"} />
+    <SlotFields key={doctorId} data={data} doctorId={doctorId} setDoctorId={setDoctorId} clinics={clinics} initialClinicId={doctorId === slot.doctorId ? slot.clinicId ?? "" : undefined} initialConsultationType={doctorId === slot.doctorId ? slot.consultationType : undefined} startsAt={slot.startsAt} endsAt={slot.endsAt} status={slot.status === "BLOCKED" ? "BLOCKED" : "OPEN"} />
     {state.error && <p className="auth-error" role="alert">{state.error}</p>}{state.success && <p className="doctor-action-success" role="status">{state.success}</p>}
     <div className="slot-form-footer"><button className="button" type="submit" disabled={pending}>{pending ? "Saving…" : "Save changes"}</button></div>
   </form>;
 }
 
-function SlotFields({ data, doctorId, setDoctorId, consultationType, setConsultationType, clinics, availableTypes, initialClinicId = "", startsAt, endsAt, status }: {
+function SlotFields({ data, doctorId, setDoctorId, clinics, initialClinicId, initialConsultationType, startsAt, endsAt, status }: {
   data: AdminScheduleData; doctorId: string; setDoctorId: (id: string) => void;
-  consultationType: "ONLINE" | "IN_PERSON"; setConsultationType: (type: "ONLINE" | "IN_PERSON") => void;
-  clinics: AdminScheduleData["clinics"]; availableTypes: Array<"ONLINE" | "IN_PERSON">; initialClinicId?: string;
+  clinics: AdminScheduleData["clinics"]; initialClinicId?: string;
+  initialConsultationType?: "ONLINE" | "IN_PERSON";
   startsAt?: string; endsAt?: string; status?: "OPEN" | "BLOCKED";
 }) {
+  const doctor = data.doctors.find((item) => item.id === doctorId);
+  const canOfferOnline = doctor?.services.includes("ONLINE") ?? false;
+  const canOfferInPerson = doctor?.services.includes("IN_PERSON") ?? false;
+  const defaultType = canOfferInPerson && clinics.length > 0 ? "IN_PERSON" : canOfferOnline ? "ONLINE" : "IN_PERSON";
+  const consultationType = initialConsultationType ?? defaultType;
+  const clinicId = consultationType === "IN_PERSON" ? initialClinicId ?? clinics.find((clinic) => clinic.isPrimary)?.clinicId ?? clinics[0]?.clinicId ?? "" : "";
   return <div className="slot-fields">
     <label className="form-field"><span>Doctor</span><select name="doctorId" value={doctorId} onChange={(event) => setDoctorId(event.currentTarget.value)} required><option value="">Select doctor</option>{data.doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.name} · {doctor.specialty}</option>)}</select></label>
-    <label className="form-field"><span>Consultation type</span><select name="consultationType" value={consultationType} onChange={(event) => setConsultationType(event.currentTarget.value as "ONLINE" | "IN_PERSON")} required>{availableTypes.includes("ONLINE") && <option value="ONLINE">Online</option>}{availableTypes.includes("IN_PERSON") && <option value="IN_PERSON">In person</option>}</select></label>
-    {consultationType === "IN_PERSON" && <label className="form-field"><span>Assigned clinic</span><select name="clinicId" defaultValue={initialClinicId} required><option value="">Select clinic</option>{clinics.map((clinic) => <option key={clinic.clinicId} value={clinic.clinicId}>{clinic.name}</option>)}</select></label>}
-    {consultationType === "ONLINE" && <input type="hidden" name="clinicId" value="" />}
+    <input type="hidden" name="clinicId" value={clinicId} />
+    <input type="hidden" name="consultationType" value={consultationType} />
     <label className="form-field"><span>Start (Yangon time)</span><input name="startsAt" type="datetime-local" defaultValue={startsAt ? toYangonLocal(startsAt) : undefined} required /></label>
     <label className="form-field"><span>End (Yangon time)</span><input name="endsAt" type="datetime-local" defaultValue={endsAt ? toYangonLocal(endsAt) : undefined} required /></label>
     {status && <label className="form-field"><span>Availability</span><select name="status" defaultValue={status}><option value="OPEN">Open for booking</option><option value="BLOCKED">Blocked</option></select></label>}

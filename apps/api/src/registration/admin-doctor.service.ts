@@ -69,6 +69,8 @@ export class AdminDoctorService {
         accountStatus: doctor.appUser.status,
         verificationStatus: doctor.verificationStatus,
         specialty: doctor.specialty,
+        biography: doctor.biography,
+        profilePhotoUrl: doctor.profilePhotoKey && this.storage ? this.storage.storage.from("doctor-profile-photos").getPublicUrl(doctor.profilePhotoKey).data.publicUrl : null,
         licenseNumber: doctor.licenseNumber,
         licenseRegion: doctor.licenseRegion,
         licenseExpiry: doctor.licenseExpiry?.toISOString().slice(0, 10) ?? "",
@@ -92,6 +94,7 @@ export class AdminDoctorService {
         where: { appUserId: doctorId },
         data: {
           specialty: data.specialty,
+          biography: data.biography,
           licenseNumber: data.licenseNumber,
           licenseRegion: data.licenseRegion,
           licenseExpiry: new Date(`${data.licenseExpiry}T00:00:00.000Z`),
@@ -184,6 +187,7 @@ export class AdminDoctorService {
     const input = this.asObject(body);
     const fullName = this.readString(input.fullName, "fullName");
     const specialty = this.readString(input.specialty, "specialty");
+    const biography = typeof input.biography === "string" ? input.biography.trim() : "";
     const licenseNumber = this.readString(input.licenseNumber, "licenseNumber");
     const licenseRegion = this.readString(input.licenseRegion, "licenseRegion");
     const licenseExpiry = this.readString(input.licenseExpiry, "licenseExpiry");
@@ -192,10 +196,11 @@ export class AdminDoctorService {
     const experienceYears = Number(input.experienceYears);
     const languages = Array.isArray(input.languages) ? input.languages.filter((value): value is string => typeof value === "string").map((value) => value.trim()).filter(Boolean) : [];
     const services = Array.isArray(input.services) ? input.services.filter((value): value is ConsultationType => typeof value === "string" && SERVICE_TYPES.has(value)) : [];
+    if (biography.length > 2000) throw new BadRequestException({ code: "BIOGRAPHY_TOO_LONG" });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(licenseExpiry) || Number.isNaN(Date.parse(`${licenseExpiry}T00:00:00Z`))) throw new BadRequestException({ code: "INVALID_LICENSE_EXPIRY" });
     if (!Number.isInteger(experienceYears) || experienceYears < 0 || experienceYears > 100) throw new BadRequestException({ code: "INVALID_EXPERIENCE" });
     if (!languages.length || !services.length || new Set(services).size !== services.length) throw new BadRequestException({ code: "INVALID_PROFILE_LIST_FIELDS" });
-    return { fullName, specialty, licenseNumber, licenseRegion, licenseExpiry, phone, qualifications, experienceYears, languages, services };
+    return { fullName, specialty, biography, licenseNumber, licenseRegion, licenseExpiry, phone, qualifications, experienceYears, languages, services };
   }
 
   private asObject(value: unknown): JsonObject {

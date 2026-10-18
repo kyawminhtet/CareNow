@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "CareNow",
+    "slug": "carenow-patient",
+    "scheme": "carenow",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "plugins": ["expo-router", "expo-secure-store", ["expo-notifications", { "defaultChannel": "appointments" }]],
+    "ios": { "supportsTablet": false, "bundleIdentifier": "com.carenow.patient" },
+    "android": { "package": "com.carenow.patient", "adaptiveIcon": { "backgroundColor": "#ffffff" } },
+    "extra": { "eas": { "projectId": "" } }
+  }
+}

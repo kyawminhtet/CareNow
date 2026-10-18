@@ -6,6 +6,6 @@ import { SupabaseIdentityService } from "./supabase-identity.service";
 @Module({
   controllers: [AuthController],
   providers: [AuthService, SupabaseIdentityService],
-  exports: [AuthService],
+  exports: [AuthService, SupabaseIdentityService],
 })
 export class AuthModule {}
