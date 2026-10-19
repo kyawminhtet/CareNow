@@ -2,6 +2,9 @@
   "name": "@carenow/api",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "build": "prisma generate && node ../../node_modules/@nestjs/cli/bin/nest.js build",
     "start": "node dist/main.js",
