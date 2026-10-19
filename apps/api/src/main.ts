@@ -1,5 +1,9 @@
 import "dotenv/config";
 import "reflect-metadata";
+// Nest's FastifyAdapter loads this optional integration with a runtime-only
+// require. Import it explicitly so serverless bundlers include it in the
+// deployed function bundle.
+import "@fastify/static";
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
